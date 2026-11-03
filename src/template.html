@@ -1,0 +1,526 @@
+<meta charset="utf-8">
+<title>Track Lap Fixer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--PWA_HEAD-->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e2512b'/%3E%3Crect x='8' y='17' width='48' height='30' rx='15' fill='none' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M40 11v12' stroke='%230f1b36' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M24.5 32.5l5 5 10-11' fill='none' stroke='%23fff' stroke-width='4.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;1,700;1,800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: navy "stadium" band with the track oval and the four steps, then one working column that follows those steps. Tartan orange marks what you change. */
+:root{
+  --bg:#f2f4f8; --surface:#ffffff; --surface-2:#f7f8fb; --ink:#111a2e; --muted:#5a6680; --line:#dde2ec;
+  --band:#0f1b36; --band-ink:#ffffff; --band-muted:#a9b6d3; --lane:#2c3d66;
+  --accent:#e2512b; --accent-ink:#ffffff; --accent-soft:#fde9e2;
+  --blue:#2f5fd0; --blue-soft:#e4ebfb; --green:#1d8a5c;
+  --good:#16805f; --good-soft:#dff3eb; --warn:#a35a06; --warn-soft:#fcf0dc;
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a1020; --surface:#121b30; --surface-2:#0f172a; --ink:#e8edf7; --muted:#97a3bd; --line:#26324d;
+  --band:#060b18; --band-ink:#ffffff; --band-muted:#94a3c4; --lane:#1d2a4a;
+  --accent:#ff7a52; --accent-ink:#1a0d07; --accent-soft:#3a1d14;
+  --blue:#86a8ff; --blue-soft:#1b2a4f; --green:#4fd19a;
+  --good:#4fd1a3; --good-soft:#103629; --warn:#f2b66a; --warn-soft:#3a2a14; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a1020; --surface:#121b30; --surface-2:#0f172a; --ink:#e8edf7; --muted:#97a3bd; --line:#26324d;
+  --band:#060b18; --band-ink:#ffffff; --band-muted:#94a3c4; --lane:#1d2a4a;
+  --accent:#ff7a52; --accent-ink:#1a0d07; --accent-soft:#3a1d14;
+  --blue:#86a8ff; --blue-soft:#1b2a4f; --green:#4fd19a;
+  --good:#4fd1a3; --good-soft:#103629; --warn:#f2b66a; --warn-soft:#3a2a14; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--f-body);margin:0}
+.in{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--f-display);margin:0;line-height:1.02;text-wrap:balance}
+h1{font-size:clamp(2.6rem,6vw,4rem);font-weight:800;font-style:italic;letter-spacing:-.01em;text-transform:uppercase}
+h2{font-size:1.9rem;font-weight:700;font-style:italic;text-transform:uppercase;letter-spacing:.01em}
+h3{font-size:1.25rem;font-weight:700}
+p{margin:0}
+.muted{color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.band{background:var(--band);color:var(--band-ink);overflow:hidden}
+.band .in{padding-block:22px 26px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px 24px;align-items:center}
+.topbar{grid-column:1/-1;display:flex;justify-content:flex-end}
+.langsel{display:flex;align-items:center;gap:8px;color:var(--band-muted);font-size:.85rem;font-weight:600}
+.langsel select{background:var(--band);color:var(--band-ink);border:1px solid var(--lane);border-radius:999px;padding:5px 12px;font:600 .9rem var(--f-body)}
+.band p.lead{color:var(--band-muted);font-size:1.08rem;max-width:52ch;margin-top:10px}
+.band h1 span{color:var(--accent)}
+.oval{width:100%;max-width:300px;height:auto;justify-self:end}
+.oval .ln{fill:none;stroke:var(--lane);stroke-width:7}
+.oval .lw{fill:none;stroke:var(--band-muted);stroke-width:1;opacity:.55}
+.oval .fin{stroke:var(--band-ink);stroke-width:2}
+.oval circle{fill:var(--accent)}
+.steps{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 0;padding:0;list-style:none}
+.steps a{display:flex;align-items:center;gap:10px;color:var(--band-ink);text-decoration:none;padding:7px 14px 7px 7px;border:1px solid var(--lane);border-radius:999px;font-weight:600;font-size:.95rem}
+.steps a:hover{border-color:var(--accent)}
+.steps b{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font:700 1rem var(--f-display)}
+
+main .in{display:flex;flex-direction:column;gap:44px;padding-block:34px 70px}
+section{display:flex;flex-direction:column;gap:16px;scroll-margin-top:16px}
+.sh{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.num{font:800 italic 2.6rem/1 var(--f-display);color:var(--accent)}
+.sh p{flex:0 0 100%;color:var(--muted);max-width:70ch}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.btn{font:600 .95rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-size:1.05rem;padding:12px 22px}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:4px 9px;font-size:.82rem}
+input[type=number],select{font:500 1rem var(--f-body);font-variant-numeric:tabular-nums;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+input[type=number]{width:6.2em}
+input:focus,select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+label.l{font-size:.85rem;font-weight:600;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.unit{color:var(--muted);font-size:.85rem}
+
+.drop{border:2px dashed var(--line);border-radius:var(--r);background:var(--surface);padding:22px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop .file{display:flex;gap:14px;align-items:center;min-width:0}
+.drop svg{flex:none}
+.drop .name{font-weight:700;font-size:1.1rem;overflow-wrap:anywhere}
+.tag{display:inline-block;font:700 .7rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--warn-soft);color:var(--warn);margin-right:6px;vertical-align:2px}
+.how2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.how2 .card{padding:14px 16px}
+.how2 b{display:block;margin-bottom:2px}
+.how2 span{color:var(--muted);font-size:.93rem}
+.msg{padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--warn);font-weight:500}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--surface);padding:12px 16px;min-width:0}
+.stat .k{font-size:.74rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.stat .v{font:700 1.9rem/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.stat .v small{font:500 .95rem var(--f-body);color:var(--muted);margin-left:3px}
+.stat .was{font-size:.82rem;color:var(--muted)}
+.stat.ch .v{color:var(--accent)}
+.charts{display:flex;flex-direction:column;gap:6px}
+.chart-head{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center}
+.chips{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--surface-2)}
+.chips button{font:600 .85rem var(--f-body);border:0;background:none;color:var(--muted);padding:4px 12px;border-radius:999px;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--ink);color:var(--surface)}
+.plot{position:relative}
+.plot svg{display:block;width:100%;height:auto;overflow:visible}
+.plot text{font:500 11px var(--f-body);fill:var(--muted)}
+.plot .grid{stroke:var(--line);stroke-width:1}
+.plot .lapline{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.plot .series{fill:none;stroke-width:2;stroke-linejoin:round}
+.plot .cut{fill:var(--muted);opacity:.14}
+.plot .cutline{stroke:var(--accent);stroke-width:2}
+.plot .bar{fill:var(--blue)}
+.plot .bar.ch{fill:var(--accent)}
+.plot .xh{stroke:var(--ink);stroke-width:1;opacity:.5}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--surface);font-size:.82rem;padding:6px 10px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-110%);z-index:3;line-height:1.35;font-variant-numeric:tabular-nums}
+
+.tool-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+.tool-head p{color:var(--muted);font-size:.93rem;max-width:68ch;margin-top:3px}
+.when{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)}
+.bulk{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:12px;background:var(--surface-2);border-radius:8px;margin-bottom:12px}
+.sheet{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+#laps{min-width:760px}
+th{font:700 .72rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:right;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2)}
+td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tfoot td{border-top:2px solid var(--line);border-bottom:0;font-weight:700}
+td.lap{font:700 1.25rem var(--f-display)}
+td.lap small{display:block;font:600 .72rem var(--f-body);color:var(--blue);letter-spacing:.04em}
+td.dim{color:var(--muted)}
+.edit{display:inline-flex;align-items:center;gap:4px}
+.step{width:30px;height:32px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;cursor:pointer;font:600 1.05rem var(--f-body);line-height:1}
+.step:hover{border-color:var(--accent);color:var(--accent)}
+tr.ch td{background:var(--accent-soft)}
+tr.ch input{border-color:var(--accent)}
+tr.ch td.pace{color:var(--accent);font-weight:700}
+tr.cut td{opacity:.4}
+.icon-btn{border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;font:600 .8rem var(--f-body);padding:4px 8px;border-radius:6px}
+.icon-btn:hover{border-color:var(--line);color:var(--ink)}
+.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.tools .card p.muted{font-size:.93rem;margin:4px 0 12px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.seg label{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.seg input{margin-top:4px;accent-color:var(--accent)}
+.seg b{display:block}
+.seg span{font-size:.88rem;color:var(--muted)}
+
+/* preview */
+.pv{display:flex;flex-direction:column;gap:18px}
+.pv-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-end}
+.pv-title b{display:block;font:700 1.6rem/1.1 var(--f-display)}
+.pv-title span{color:var(--muted);font-size:.9rem}
+.pv-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:14px 18px}
+.pv-stats .k{font-size:.78rem;color:var(--muted);font-weight:600}
+.pv-stats .v{font:700 1.55rem/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.pv-stats .v small{font:500 .85rem var(--f-body);color:var(--muted);margin-left:2px}
+.pv-stats .big .v{font-size:2.1rem}
+.pv-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+#pvMap svg{max-width:560px}
+.pv-grid>div{min-width:0}
+.pv h4{font:700 1rem var(--f-display);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px;color:var(--muted)}
+.pv .mini th,.pv .mini td{padding:5px 8px;font-size:.88rem}
+.pbar{display:block;height:6px;border-radius:3px;background:var(--blue);min-width:2px}
+.map{background:var(--surface-2);border-radius:8px;display:block;width:100%;height:auto}
+.map path{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+.nomap{background:var(--surface-2);border-radius:8px;padding:18px;color:var(--muted);font-size:.9rem}
+.pv .note{color:var(--muted);font-size:.84rem}
+.lbl{font:600 .8rem var(--f-body);color:var(--muted);margin:6px 0 0}
+
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.checks li{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:var(--surface-2)}
+.checks .ic{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.8rem;margin-top:1px}
+.ok .ic{background:var(--good-soft);color:var(--good)}
+.chg .ic{background:var(--accent-soft);color:var(--accent)}
+.bad .ic{background:var(--warn-soft);color:var(--warn)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.cols h3{margin-bottom:10px}
+
+a.btn{text-decoration:none}
+.linkbtn{margin-top:10px;align-self:flex-start}
+.how2 .card{display:flex;flex-direction:column}
+.orig-list{display:grid;gap:6px}
+.orig-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.orig-row b{overflow-wrap:anywhere}
+.orig-row .hint{display:block}
+/* brand */
+.brand{display:flex;align-items:center;gap:16px}
+.logo{width:64px;height:64px;flex:none;filter:drop-shadow(0 6px 14px rgba(0,0,0,.25))}
+@media (max-width:520px){.logo{width:48px;height:48px}}
+
+/* main tool + more tools */
+.main-tool{border:2px solid var(--accent);position:relative}
+.badge{display:inline-flex;align-items:center;gap:6px;font:700 .72rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;background:var(--accent);color:var(--accent-ink);padding:3px 10px;border-radius:999px;margin-bottom:8px}
+.more-head{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.more-head p{color:var(--muted);max-width:70ch}
+.tgroups{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start}
+.tgroup{display:flex;flex-direction:column;gap:10px;min-width:0}
+.tgroup h4{margin:0;font:700 .8rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--blue)}
+details.tool{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+details.tool[open]{border-color:var(--ink)}
+details.tool.on{border-color:var(--accent)}
+details.tool summary{list-style:none;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;cursor:pointer;border-radius:var(--r)}
+details.tool summary::-webkit-details-marker{display:none}
+details.tool summary:hover{background:var(--surface-2)}
+.tic{width:36px;height:36px;border-radius:9px;background:var(--blue-soft);color:var(--blue);display:grid;place-items:center}
+details.tool.on .tic{background:var(--accent-soft);color:var(--accent)}
+.tic svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ttl b{display:block;font-weight:700}
+.ttl span{display:block;color:var(--muted);font-size:.86rem;line-height:1.35}
+.tright{display:flex;align-items:center;gap:8px}
+.chip-on{font:700 .68rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;background:var(--accent);color:var(--accent-ink);padding:2px 8px;border-radius:999px}
+.chev{width:16px;height:16px;transition:transform .15s;stroke:var(--muted);fill:none;stroke-width:2}
+details.tool[open] .chev{transform:rotate(180deg)}
+.tbody{padding:4px 16px 16px;display:flex;flex-direction:column;gap:10px}
+.tbody p{color:var(--muted);font-size:.92rem}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.85rem;font-weight:600}
+.checklist{display:grid;gap:6px}
+.checklist label{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.checklist label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.checklist label.na{opacity:.5;cursor:not-allowed}
+.checklist input{accent-color:var(--accent)}
+.hint{font-size:.85rem;color:var(--muted)}
+input[type=datetime-local]{font:500 1rem var(--f-body);padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+
+.save{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.save p{max-width:60ch}
+ol.up{margin:8px 0 0;padding-left:1.2em;display:grid;gap:6px}
+ol.up li{padding-left:4px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-weight:600;max-width:calc(100% - 32px);z-index:9}
+@media (max-width:820px){.pv-grid{grid-template-columns:1fr}}
+@media (max-width:720px){.band .in{grid-template-columns:1fr}.oval{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+</style>
+
+<div class="band">
+  <div class="in">
+    <div class="topbar"><label class="langsel"><span data-i18n="lang">Language</span><select id="lang"></select></label></div>
+    <div>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 64 64" role="img" aria-label="Track Lap Fixer">
+          <rect width="64" height="64" rx="16" fill="#e2512b"/>
+          <rect x="8" y="17" width="48" height="30" rx="15" fill="none" stroke="#fff" stroke-width="4"/>
+          <rect x="15.5" y="24.5" width="33" height="15" rx="7.5" fill="none" stroke="#fff" stroke-width="1.6" opacity=".55"/>
+          <path d="M40 11v12" stroke="#0f1b36" stroke-width="4" stroke-linecap="round"/>
+          <path d="M24.5 32.5l5 5 10-11" fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Track Lap <span>Fixer</span></h1>
+      </div>
+      <p class="lead" data-i18n="lead"></p>
+    </div>
+    <svg class="oval" viewBox="0 0 300 160" aria-hidden="true">
+      <rect class="ln" x="12" y="12" width="276" height="136" rx="68"/>
+      <rect class="lw" x="8.5" y="8.5" width="283" height="143" rx="71.5"/>
+      <rect class="lw" x="15.5" y="15.5" width="269" height="129" rx="64.5"/>
+      <rect class="ln" x="28" y="28" width="244" height="104" rx="52"/>
+      <rect class="lw" x="31.5" y="31.5" width="237" height="97" rx="48.5"/>
+      <line class="fin" x1="190" y1="6" x2="190" y2="36"/>
+      <circle r="5"><animateMotion dur="9s" repeatCount="indefinite" path="M190,12 H220 A68,68 0 0 1 220,148 H80 A68,68 0 0 1 80,12 Z"/></circle>
+    </svg>
+    <ol class="steps" data-i18n-aria="steps_aria">
+      <li><a href="#s1" data-jump="s1"><b>1</b><span data-i18n="nav1"></span></a></li>
+      <li><a href="#s2" data-jump="s2"><b>2</b><span data-i18n="nav2"></span></a></li>
+      <li><a href="#s3" data-jump="s3"><b>3</b><span data-i18n="nav3"></span></a></li>
+      <li><a href="#s4" data-jump="s4"><b>4</b><span data-i18n="nav4"></span></a></li>
+    </ol>
+  </div>
+</div>
+
+<main><div class="in">
+
+<section id="s1">
+  <div class="sh"><span class="num">1</span><h2 data-i18n="s1_title"></h2><p data-i18n="s1_p"></p></div>
+  <div class="drop" id="drop">
+    <div class="file">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><rect x="7" y="3" width="26" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="2" opacity=".5"/><path d="M13 25l5-6 4 4 5-7" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div style="min-width:0"><div class="name" id="fileName">–</div><div class="muted" id="fileSub"></div></div>
+    </div>
+    <label class="btn primary" for="fileInput" data-i18n="choose"></label>
+    <input type="file" id="fileInput" accept=".fit,.zip,application/zip" hidden>
+  </div>
+  <div class="msg" id="err" hidden></div>
+  <div class="msg" id="repairMsg" style="background:var(--good-soft);color:var(--ink)" hidden></div>
+  <div class="how2">
+    <div class="card"><b data-i18n="src_garmin_t"></b><span data-i18n="src_garmin"></span><a class="btn sm linkbtn" href="https://connect.garmin.com/modern/activities" target="_blank" rel="noopener" data-i18n="link_gc"></a></div>
+    <div class="card"><b data-i18n="src_strava_t"></b><span data-i18n="src_strava"></span></div>
+    <div class="card"><b data-i18n="src_watch_t"></b><span data-i18n="src_watch"></span></div>
+  </div>
+  <div class="card" id="origCard" hidden>
+    <h3 data-i18n="orig_h"></h3><p class="muted" style="margin:4px 0 10px;font-size:.92rem" data-i18n="orig_p"></p>
+    <div class="orig-list" id="origList"></div>
+  </div>
+</section>
+
+<section id="ov">
+  <div class="stats" id="stats"></div>
+  <div class="card charts">
+    <div class="chart-head">
+      <h3 id="chartTitle"></h3>
+      <div class="chips" role="group" data-i18n-aria="show_aria">
+        <button type="button" data-metric="hr" aria-pressed="true" data-i18n="m_hr"></button>
+        <button type="button" data-metric="cad" aria-pressed="false" data-i18n="m_cad"></button>
+      </div>
+    </div>
+    <div class="plot" id="plotTop"></div>
+    <h3 style="margin-top:8px" data-i18n="chart_laps"></h3>
+    <div class="plot" id="plotLaps"></div>
+    <p class="muted" style="font-size:.85rem" data-i18n="chart_note"></p>
+  </div>
+</section>
+
+<section id="s2">
+  <div class="sh"><span class="num">2</span><h2 data-i18n="s2_title"></h2><p data-i18n="s2_p"></p></div>
+  <div class="card main-tool">
+    <div class="tool-head">
+      <div><span class="badge" data-i18n="main_badge"></span><h3 data-i18n="lapt_h"></h3><p data-i18n="lapt_p"></p></div>
+      <button class="btn" id="resetAll" data-i18n="reset_all"></button>
+    </div>
+    <div class="bulk">
+      <div class="row"><label class="l" for="trackLen" data-i18n="track_len"></label><input type="number" id="trackLen" min="1" step="1" value="200"><span class="unit">m</span></div>
+      <div class="row"><label class="l" for="bulkDist" data-i18n="set_all"></label><input type="number" id="bulkDist" min="0" step="1" value="400"><span class="unit">m</span><button class="btn" id="bulkApply" data-i18n="apply"></button></div>
+      <button class="btn" id="snap" data-i18n="snap" data-i18n-title="snap_title"></button>
+    </div>
+    <div class="sheet"><table id="laps"></table></div>
+  </div>
+  <div class="more-head"><h3 data-i18n="more_tools"></h3><p data-i18n="more_tools_p"></p></div>
+  <div class="tgroups">
+    <div class="tgroup">
+      <h4 data-i18n="grp_time"></h4>
+      <details class="tool" id="t_crop">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></svg></span><span class="ttl"><b data-i18n="crop_when"></b><span data-i18n="crop_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="crop_p"></p>
+          <div class="field"><label for="cropStart"><span data-i18n="crop_start"></span> <b id="cropStartLabel">0:00</b></label><input type="range" id="cropStart" min="0" max="100" value="0"></div>
+          <div class="field"><label for="trim"><span data-i18n="crop_end"></span> <b id="trimLabel">–</b></label><input type="range" id="trim" min="0" max="100" value="100"></div>
+          <div class="row"><button class="btn sm" id="trimReset" data-i18n="keep_all"></button><span class="hint" id="cropNa" hidden data-i18n="na_compressed"></span></div>
+        </div>
+      </details>
+      <details class="tool" id="t_shift">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="ttl"><b data-i18n="shift_when"></b><span data-i18n="shift_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="shift_p"></p>
+          <div class="field"><label for="shiftAt" data-i18n="shift_new"></label><input type="datetime-local" id="shiftAt" step="1"></div>
+          <div class="row"><button class="btn sm" data-sh="-86400">−1 d</button><button class="btn sm" data-sh="-3600">−1 h</button><button class="btn sm" data-sh="3600">+1 h</button><button class="btn sm" data-sh="86400">+1 d</button><button class="btn sm" id="shiftReset" data-i18n="shift_reset"></button></div>
+          <span class="hint" id="shiftInfo"></span>
+        </div>
+      </details>
+    </div>
+    <div class="tgroup">
+      <h4 data-i18n="grp_dist"></h4>
+      <details class="tool" id="t_total">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></span><span class="ttl"><b data-i18n="tot_when"></b><span data-i18n="tot_h"></span></span><span class="tright"><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="tot_p"></p>
+          <div class="row"><input type="number" id="totalKm" min="0" step="0.01" data-i18n-aria="tot_aria"><span class="unit">km</span><button class="btn" id="totalApply" data-i18n="tot_apply"></button></div>
+        </div>
+      </details>
+      <details class="tool" id="t_mode">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg></span><span class="ttl"><b data-i18n="mode_when"></b><span data-i18n="mode_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <div class="seg">
+            <label><input type="radio" name="mode" value="even" checked><div><b data-i18n="even_t"></b><span data-i18n="even_p"></span></div></label>
+            <label><input type="radio" name="mode" value="shape"><div><b data-i18n="shape_t"></b><span data-i18n="shape_p"></span></div></label>
+          </div>
+        </div>
+      </details>
+      <details class="tool" id="t_sport">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><span class="ttl"><b data-i18n="sport_when"></b><span data-i18n="sport_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="sport_p"></p>
+          <select id="sport" data-i18n-aria="sport_when"></select>
+        </div>
+      </details>
+    </div>
+    <div class="tgroup">
+      <h4 data-i18n="grp_data"></h4>
+      <details class="tool" id="t_spike">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M3 18h4l2-4 3 6 3-16 2 14h4"/></svg></span><span class="ttl"><b data-i18n="spike_when"></b><span data-i18n="spike_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="spike_p"></p>
+          <p class="hint" id="hrMaxFile"></p>
+          <div class="seg" style="margin-top:0">
+            <label><input type="radio" name="spikeMode" value="off" checked><div><b data-i18n="spike_off_t"></b></div></label>
+            <label><input type="radio" name="spikeMode" value="jump"><div><b data-i18n="spike_mode_jump"></b><span data-i18n="spike_mode_jump_p"></span></div></label>
+            <label><input type="radio" name="spikeMode" value="limit"><div><b data-i18n="spike_mode_limit"></b><span data-i18n="spike_mode_limit_p"></span></div></label>
+          </div>
+          <div class="field" id="jumpField" hidden><label for="hrJump" data-i18n="spike_jump"></label><div class="row"><input type="number" id="hrJump" min="10" max="80" step="1" value="30"><span class="unit">bpm</span></div></div>
+          <div class="field" id="limitField" hidden><label for="hrMax" data-i18n="spike_hr"></label><div class="row"><input type="number" id="hrMax" min="60" max="250" step="1"><span class="unit">bpm</span></div></div>
+          <span class="hint" id="hrMaxInfo"></span>
+          <div class="field" id="pwrField"><label for="pwrMax" data-i18n="spike_pwr"></label><div class="row"><input type="number" id="pwrMax" min="50" max="3000" step="1" data-i18n-ph="off_ph"><span class="unit">W</span></div><span class="hint" id="pwrMaxInfo"></span></div>
+        </div>
+      </details>
+      <details class="tool" id="t_device">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6V3h6v3M9 18v3h6v-3"/></svg></span><span class="ttl"><b data-i18n="dev_when"></b><span data-i18n="dev_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="dev_p"></p>
+          <select id="device" data-i18n-aria="dev_when"></select>
+        </div>
+      </details>
+      <details class="tool" id="t_remove">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M7 21h10M5 14l7-7 6 6-7 7H8z"/></svg></span><span class="ttl"><b data-i18n="rm_when"></b><span data-i18n="rm_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="rm_p"></p>
+          <div class="checklist" id="rmList"></div>
+        </div>
+      </details>
+    </div>
+    <div class="tgroup">
+      <h4 data-i18n="grp_files"></h4>
+      <details class="tool" id="t_combine">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M4 7h7v10H4zM13 7h7v10h-7zM11 12h2"/></svg></span><span class="ttl"><b data-i18n="cmb_when"></b><span data-i18n="cmb_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="cmb_p"></p>
+          <div class="row"><label class="btn" for="combineInput" data-i18n="cmb_btn"></label><input type="file" id="combineInput" accept=".fit,.zip" hidden></div>
+          <span class="hint" id="combineInfo"></span>
+        </div>
+      </details>
+      <details class="tool" id="t_split">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M12 3v18M4 8l4 4-4 4M20 8l-4 4 4 4"/></svg></span><span class="ttl"><b data-i18n="spl_when"></b><span data-i18n="spl_h"></span></span><span class="tright"><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="spl_p"></p>
+          <div class="field"><label for="splitAt"><span data-i18n="spl_at"></span> <b id="splitLabel">–</b></label><input type="range" id="splitAt" min="0" max="100" value="50"></div>
+          <div class="row"><button class="btn" id="splitSave" data-i18n="spl_btn"></button></div>
+        </div>
+      </details>
+      <details class="tool" id="t_import">
+        <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></span><span class="ttl"><b data-i18n="imp_when"></b><span data-i18n="imp_h"></span></span><span class="tright"><span class="chip-on" hidden data-i18n="active"></span><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+        <div class="tbody">
+          <p data-i18n="imp_p"></p>
+          <div class="row"><label class="btn" for="importInput" data-i18n="imp_btn"></label><input type="file" id="importInput" accept=".fit,.tcx,.gpx,.zip" hidden><button class="btn sm" id="importClear" data-i18n="imp_clear" hidden></button></div>
+          <div class="field" id="importOffField" hidden><label for="importOff" data-i18n="imp_off"></label><div class="row"><input type="number" id="importOff" step="1" value="0"><span class="unit">s</span></div></div>
+          <span class="hint" id="importInfo"></span>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="sh"><span class="num">3</span><h2 data-i18n="s3_title"></h2><p data-i18n="s3_p"></p></div>
+  <div class="card pv">
+    <div class="pv-head">
+      <div class="pv-title"><b id="pvName"></b><span id="pvWhen"></span></div>
+      <div class="chips" role="group" data-i18n-aria="show_aria">
+        <button type="button" data-pv="new" aria-pressed="true" data-i18n="pv_new"></button>
+        <button type="button" data-pv="old" aria-pressed="false" data-i18n="pv_old"></button>
+      </div>
+    </div>
+    <div class="pv-stats" id="pvStats"></div>
+    <div>
+      <h4 data-i18n="pv_charts"></h4>
+      <p class="lbl" data-i18n="pv_pace" id="pvPaceLbl"></p><div class="plot" id="pvPace"></div>
+      <p class="lbl" data-i18n="m_hr"></p><div class="plot" id="pvHr"></div>
+      <p class="lbl" data-i18n="m_cad"></p><div class="plot" id="pvCad"></div>
+    </div>
+    <div class="pv-grid">
+      <div><h4 data-i18n="pv_splits"></h4><div class="sheet"><table class="mini" id="pvSplits"></table></div></div>
+      <div><h4 data-i18n="pv_laps"></h4><div class="sheet"><table class="mini" id="pvLaps"></table></div></div>
+    </div>
+    <div><h4 data-i18n="pv_map"></h4><div id="pvMap"></div></div>
+    <p class="note" data-i18n="pv_moving_note"></p>
+  </div>
+  <div class="cols">
+    <div class="card"><h3 data-i18n="ch_h"></h3><ul class="checks" id="changes"></ul></div>
+    <div class="card"><h3 data-i18n="ok_h"></h3><ul class="checks" id="verify"></ul></div>
+  </div>
+</section>
+
+<section id="s4">
+  <div class="sh"><span class="num">4</span><h2 data-i18n="s4_title"></h2></div>
+  <div class="card save">
+    <p id="saveNote"></p>
+    <button class="btn primary" id="save" disabled data-i18n="save"></button>
+  </div>
+  <p class="msg" style="background:var(--blue-soft);color:var(--ink)" data-i18n="keep_orig"></p>
+  <div class="cols">
+    <div class="card"><h3 data-i18n="gc_h"></h3><ol class="up"><li data-i18n="gc1"></li><li data-i18n="gc2"></li><li data-i18n="gc3"></li></ol>
+      <div class="row" style="margin-top:10px"><a class="btn sm" href="https://connect.garmin.com/modern/activities" target="_blank" rel="noopener" data-i18n="link_gc"></a><a class="btn sm" href="https://connect.garmin.com/modern/import-data" target="_blank" rel="noopener" data-i18n="link_gc_import"></a></div></div>
+    <div class="card"><h3 data-i18n="st_h"></h3>
+      <div id="stravaBox" hidden>
+        <div id="stravaOn" hidden>
+          <p><span data-i18n="sv_connected"></span> <b id="stravaWho"></b></p>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="stravaUpload" data-i18n="sv_upload"></button><button class="btn sm" id="stravaOff" data-i18n="sv_disconnect"></button></div>
+          <p class="hint" id="stravaStatus" style="margin-top:8px"></p>
+        </div>
+        <details class="tool" id="stravaSetup" style="margin-top:10px">
+          <summary><span class="tic"><svg viewBox="0 0 24 24"><path d="M14 3l5 10h-4l-1-2-3 6-2-4H5z"/></svg></span><span class="ttl"><b data-i18n="sv_setup_t"></b><span data-i18n="sv_setup_h"></span></span><span class="tright"><svg class="chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></summary>
+          <div class="tbody">
+            <ol class="up">
+              <li data-i18n="sv_s1"></li>
+              <li><span data-i18n="sv_s2"></span> <code id="stravaDomain"></code></li>
+              <li data-i18n="sv_s3"></li>
+            </ol>
+            <div class="field"><label for="svId">Client ID</label><input type="number" id="svId" style="width:10em"></div>
+            <div class="field"><label for="svSecret">Client Secret</label><input type="password" id="svSecret" autocomplete="off" style="font:500 1rem var(--f-body);padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)"></div>
+            <p class="hint" data-i18n="sv_secret_note"></p>
+            <div class="row"><button class="btn primary" id="stravaLogin" data-i18n="sv_login"></button></div>
+          </div>
+        </details>
+      </div>
+      <ol class="up" style="margin-top:10px"><li data-i18n="st1"></li><li data-i18n="st2"></li><li data-i18n="st3"></li></ol>
+      <div class="row" style="margin-top:10px"><a class="btn sm" href="https://www.strava.com/upload/select" target="_blank" rel="noopener" data-i18n="link_st_upload"></a></div></div>
+  </div>
+  <div class="card save">
+    <div><h3 data-i18n="exp_h"></h3><p class="muted" style="margin-top:4px" data-i18n="exp_p"></p></div>
+    <div class="row"><button class="btn" id="expTcx" data-i18n="exp_tcx"></button><button class="btn" id="expGpx" data-i18n="exp_gpx"></button><button class="btn" id="csvLaps" data-i18n="csv_laps"></button><button class="btn" id="csvPts" data-i18n="csv_pts"></button></div>
+  </div>
+  <p class="muted" style="font-size:.9rem;max-width:80ch" data-i18n="foot"></p>
+</section>
+
+</div></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const SAMPLE_B64="__SAMPLE_B64__";
+/*I18N*/
+/*ENGINE*/
+/*APP*/
+</script>
