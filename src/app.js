@@ -136,7 +136,8 @@ function load(bytes,name,sample,keepCombined){
   $("splitAt").min=0; $("splitAt").step=1; $("splitAt").value=Math.floor((model.laps.length-1)/2);
   fillDevice(); updateCropLabels(); updateShiftUi(); updateSpikeInfo(); updateImportInfo(); updateSplitLabel();
   $("combineInfo").textContent=S.combinedWith?t("cmb_done",{a:S.combinedWith[0],b:S.combinedWith[1]}):"";
-  renderAll();
+  S.hist.cur=snap(); // the starting point exists before the first edit, however soon that comes
+  renderAll(); updateUndoBtns();
 }
 function resetToolInputs(){
   $("hrMax").value=""; $("pwrMax").value=""; $("hrJump").value=30; $("importOff").value=0;
@@ -156,7 +157,7 @@ function recordHist(){
   if(!h.cur) h.cur=cur; else if(h.cur.sig!==cur.sig){ h.undo.push(h.cur); if(h.undo.length>60) h.undo.shift(); h.redo=[]; h.cur=cur; }
   updateUndoBtns();
 }
-function updateUndoBtns(){ const h=S.hist; $("undo").disabled=!h.undo.length; $("mbarUndo").disabled=!h.undo.length; $("redo").disabled=!h.redo.length; }
+function updateUndoBtns(){ const h=S.hist; $("undo").disabled=!h.undo.length; $("redo").disabled=!h.redo.length; }
 function syncUi(){
   const m=S.model, E=S.E, span=Math.max(1,m.t1-m.t0);
   document.querySelector(`input[name=mode][value=${E.mode}]`).checked=true;
@@ -485,7 +486,14 @@ $("tplChips").addEventListener("click",e=>{
   if(d){all.splice(+d.dataset.tpldel,1);tplPut(all);renderTpls();}
   else if(u){const x=all[+u.dataset.tpl]; $("tplDist").value=x.work.join(", "); $("tplRest").value=x.rest??""; applyTpl(x.work,x.rest);}
 });
-$("undo").addEventListener("click",undo); $("mbarUndo").addEventListener("click",undo); $("redo").addEventListener("click",redo);
+$("undo").addEventListener("click",undo); $("redo").addEventListener("click",redo);
+addEventListener("keydown",e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.altKey) return;
+  const el=e.target, typing=el.isContentEditable||el.tagName==="TEXTAREA"||(el.tagName==="INPUT"&&!["range","checkbox","radio"].includes(el.type));
+  if(typing) return; // the text field's own undo wins while typing
+  const k=e.key.toLowerCase();
+  if(k==="z"&&!e.shiftKey){e.preventDefault();undo();} else if(k==="y"||(k==="z"&&e.shiftKey)){e.preventDefault();redo();}
+});
 $("mbarSave").addEventListener("click",()=>$("save").click());
 ["svName","svDesc"].forEach(id=>$(id).addEventListener("input",()=>{S.svTouched=true;}));
 let resizeT; addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{ if(S.model){renderCharts();renderPreview();} },200);});
