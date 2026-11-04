@@ -174,7 +174,7 @@ function restore(sn){
 function undo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.undo.length) return; h.redo.push(h.cur); restore(h.undo.pop()); toast(t("undone")); }
 function redo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.redo.length) return; h.undo.push(h.cur); restore(h.redo.pop()); }
 function renderAll(){ renderTable(); renderLive(); }
-function updateMbar(){ const G=derive(S.model,S.E); $("mbarTxt").textContent=fmtKm(G.reduce((a,g)=>a+g.dist,0))+" km · "+G.length+" "+t("stat_laps").toLowerCase(); }
+function updateMbar(){ const d=S.pv==="old"?S.model.laps.reduce((a,L)=>a+L.dist,0):derive(S.model,S.E).reduce((a,g)=>a+g.dist,0); $("mbarTxt").textContent=fmtKm(d)+" km"; }
 function renderLive(){ renderStats(); renderCharts(); updateToolChips(); updateSplitLabel(); updateMbar(); scheduleCheck(); }
 
 function renderStats(){
@@ -379,7 +379,7 @@ function pvMove(e){
 }
 function pvHide(){ for(const c of (S.pvCharts||[]).filter(Boolean)){ c.el.querySelectorAll(".xh,circle").forEach(x=>x.setAttribute("visibility","hidden")); const tp=c.el.querySelector(".tip"); if(tp) tp.hidden=true; } }
 ["pvPace","pvHr","pvCad"].forEach(id=>{$(id).addEventListener("pointermove",pvMove);$(id).addEventListener("pointerleave",pvHide);});
-document.querySelectorAll("[data-pv]").forEach(b=>b.addEventListener("click",()=>{S.pv=b.dataset.pv;document.querySelectorAll("[data-pv]").forEach(x=>x.setAttribute("aria-pressed",x===b));renderPreview();}));
+document.querySelectorAll("[data-pv]").forEach(b=>b.addEventListener("click",()=>{S.pv=b.dataset.pv;document.querySelectorAll("[data-pv]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.pv===S.pv));updateMbar();renderPreview();}));
 
 /* ---- check (step 3) ---- */
 function scheduleCheck(){clearTimeout(scheduleCheck.h);scheduleCheck.h=setTimeout(runCheck,250);}
@@ -496,6 +496,10 @@ addEventListener("keydown",e=>{
 });
 $("mbarSave").addEventListener("click",()=>$("save").click());
 ["svName","svDesc"].forEach(id=>$(id).addEventListener("input",()=>{S.svTouched=true;}));
+$("svCopy").addEventListener("click",async()=>{
+  const v=$("svName").value.trim(); if(!v) return;
+  try{ await navigator.clipboard.writeText(v); toast(t("sv_copied")); }catch(_){ $("svName").focus(); $("svName").select(); }
+});
 let resizeT; addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{ if(S.model){renderCharts();renderPreview();} },200);});
 $("trackLen").addEventListener("input",()=>{ if(S.model) derive(S.model,S.E).forEach(updateRow); });
 $("bulkApply").addEventListener("click",()=>{const v=Math.max(0,parseFloat($("bulkDist").value)||0); derive(S.model,S.E).forEach(g=>S.E.dist[g.key]=v); renderAll(); toast(t("toast_all",{x:fmtM(v)}));});

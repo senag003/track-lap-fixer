@@ -148,7 +148,10 @@ sv_title:"Title",
 sv_desc:"Description",
 sv_hide:"Hide from the home feed",
 sv_vis:"Who can see the activity follows your privacy setting on Strava.",
-sv_desc_rest:"{x} rest between intervals."
+sv_desc_rest:"{x} rest between intervals.",
+sv_copy:"Copy title",
+sv_copied:"Title copied.",
+sv_title_hint:"A FIT file has no title. It goes along when you upload with one tap from the app. Otherwise copy it and paste it on Strava."
 },
 sv:{
 lang:"Språk",
@@ -297,7 +300,10 @@ sv_title:"Titel",
 sv_desc:"Beskrivning",
 sv_hide:"Dölj från flödet",
 sv_vis:"Vilka som ser passet följer din sekretessinställning på Strava.",
-sv_desc_rest:"{x} vila mellan intervallerna."
+sv_desc_rest:"{x} vila mellan intervallerna.",
+sv_copy:"Kopiera titel",
+sv_copied:"Titeln är kopierad.",
+sv_title_hint:"En FIT-fil har ingen titel. Den följer med när du laddar upp med ett tryck från appen. Annars kopierar du den och klistrar in den på Strava."
 },
 nb:{
 lang:"Språk",
@@ -446,7 +452,10 @@ sv_title:"Tittel",
 sv_desc:"Beskrivelse",
 sv_hide:"Skjul fra feeden",
 sv_vis:"Hvem som ser økten følger personverninnstillingen din på Strava.",
-sv_desc_rest:"{x} pause mellom intervallene."
+sv_desc_rest:"{x} pause mellom intervallene.",
+sv_copy:"Kopier tittel",
+sv_copied:"Tittelen er kopiert.",
+sv_title_hint:"En FIT-fil har ingen tittel. Den følger med når du laster opp med ett trykk fra appen. Ellers kopierer du den og limer den inn på Strava."
 },
 da:{
 lang:"Sprog",
@@ -595,7 +604,10 @@ sv_title:"Titel",
 sv_desc:"Beskrivelse",
 sv_hide:"Skjul fra feedet",
 sv_vis:"Hvem der ser turen, følger din privatlivsindstilling på Strava.",
-sv_desc_rest:"{x} pause mellem intervallerne."
+sv_desc_rest:"{x} pause mellem intervallerne.",
+sv_copy:"Kopiér titel",
+sv_copied:"Titlen er kopieret.",
+sv_title_hint:"En FIT-fil har ingen titel. Den følger med, når du uploader med ét tryk fra appen. Ellers kopierer du den og indsætter den på Strava."
 },
 de:{
 lang:"Sprache",
@@ -744,7 +756,10 @@ sv_title:"Titel",
 sv_desc:"Beschreibung",
 sv_hide:"Im Feed ausblenden",
 sv_vis:"Wer die Aktivität sieht, richtet sich nach deiner Privatsphäre-Einstellung bei Strava.",
-sv_desc_rest:"{x} Pause zwischen den Intervallen."
+sv_desc_rest:"{x} Pause zwischen den Intervallen.",
+sv_copy:"Titel kopieren",
+sv_copied:"Titel kopiert.",
+sv_title_hint:"Eine FIT-Datei hat keinen Titel. Er wird mitgesendet, wenn du mit einem Tipp aus der App hochlädst. Sonst kopierst du ihn und fügst ihn bei Strava ein."
 }
 };
 let LANG="en";
