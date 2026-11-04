@@ -1,5 +1,5 @@
-// Track Lap Fixer offline support: the app shell is cached, and fetched fresh whenever there is a network.
-const CACHE = "tlf-v1";
+﻿// Track Lap Fixer offline support: the app shell is cached, and fetched fresh whenever there is a network.
+const CACHE = "tlf-v2";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {

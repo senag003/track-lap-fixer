@@ -252,6 +252,62 @@ function combineFits(bytesA,bytesB){
   return assemble(A.fit,outA,new Set(),new Map(),new Map([[anchor,entries]]));
 }
 
+/* ================= Split one lap in two (forgot to press lap) ================= */
+function splitLapFit(model,i,Ts){
+  const src=model.fit, L=model.laps[i], m=L.m;
+  if(src.hasCompressed) throw new Error(t("na_compressed"));
+  const a=L.records.filter(r=>r.ts<Ts), b=L.records.filter(r=>r.ts>=Ts);
+  if(!a.length||!b.length) throw new Error(t("e_split_lap"));
+  const out=new Uint8Array(src.bytes), dv=new DataView(out.buffer,out.byteOffset,out.byteLength);
+  const head=m.off-m.start, copy=out.slice(m.start,m.end), cdv=new DataView(copy.buffer), m2={d:m.d,off:head};
+  const aD=a.filter(r=>r.dist!=null), e1=Ts-L.start, e2=Math.max(0,L.elapsed-e1);
+  const d1=aD.length?Math.min(L.dist,Math.max(0,aD[aD.length-1].dist-L.origStart)):(L.elapsed>0?L.dist*e1/L.elapsed:L.dist/2), d2=Math.max(0,L.dist-d1);
+  const t1=Math.min(L.timer,Math.max(0,a[a.length-1].mov-L.movStart)), t2=Math.max(0,L.timer-t1), f=L.timer>0?t1/L.timer:0.5;
+  const patch=(d,mx,start,el,tt,dist,rs,first)=>{
+    wr(d,mx,2,start); wr(d,mx,7,el*1000); wr(d,mx,8,tt*1000); wr(d,mx,9,dist*100);
+    const avg=tt>0?dist/tt:0, sp=rs.map(r=>r.speed).filter(v=>v!=null), top=Math.max(avg,sp.reduce((x,y)=>y>x?y:x,0)), s=statsOf(rs);
+    wr(d,mx,13,avg*1000); wr(d,mx,110,avg*1000); wr(d,mx,14,top*1000); wr(d,mx,111,top*1000);
+    wr(d,mx,15,s.avgHr); wr(d,mx,16,s.maxHr); wr(d,mx,17,s.avgCad); wr(d,mx,18,s.maxCad); wr(d,mx,19,s.avgPwr); wr(d,mx,20,s.maxPwr);
+    for(const n of [10,11,21,22]){ const v=rd(src.dv,m,n); if(v!=null){ const part=Math.round(v*f); wr(d,mx,n,first?part:v-part); } }
+  };
+  patch(dv,m,L.start,e1,t1,d1,a,true); patch(cdv,m2,Ts,e2,t2,d2,b,false);
+  if(L.tsIsEnd) wr(dv,m,253,Ts);
+  wr(cdv,m2,254,i+1);
+  model.laps.forEach((x,k)=>{ if(k>i) wr(dv,x.m,254,k+1); });
+  for(const S of model.sessions) wr(dv,S.m,26,(rd(src.dv,S.m,26)??model.laps.length)+1);
+  // per-lap heart-rate zones point at laps by number
+  for(const z of src.msgs){ if(z.g!==216||rd(src.dv,z,0)!==19) continue; const idx=rd(src.dv,z,1); if(idx!=null&&idx>i) wr(dv,z,1,idx+1); }
+  const dc=m.defChunk;
+  return assemble(src,out,new Set(),new Map(),new Map([[m,[{defKey:dc,defBytes:out.subarray(dc.start,dc.end),local:m.local,bytes:copy}]]]));
+}
+// The moment inside a lap where the pace changes the most: a good guess for a forgotten lap press.
+function suggestCut(L){
+  const rs=L.records.filter(r=>r.ts!=null), n=rs.length, val=r=>r.cad!=null?r.cad:(r.speed??0);
+  if(n<60) return rs[n>>1]?.ts??L.start;
+  const pre=[0]; for(const r of rs) pre.push(pre[pre.length-1]+val(r));
+  let best=-1, at=n>>1;
+  for(let i=20;i<n-20;i++){ const x=Math.abs(pre[i]/i-(pre[n]-pre[i])/(n-i)); if(x>best){best=x;at=i;} }
+  return rs[at].ts;
+}
+
+/* ================= Which laps are intervals and which are rests ================= */
+function classifyLaps(G){
+  const speed=G.map(g=>g.timer>0?g.watch/g.timer:0), kinds=G.map(()=>"other"), res={kinds,fast:[]};
+  if(G.length<3) return res;
+  const sorted=[...speed].sort((a,b)=>a-b); let best=0, cut=null;
+  for(let i=1;i<sorted.length;i++){const gap=sorted[i]-sorted[i-1]; if(gap>best){best=gap;cut=(sorted[i]+sorted[i-1])/2;}}
+  if(cut==null||best<0.4) return res;
+  res.fast=G.map((g,i)=>i).filter(i=>speed[i]>cut&&G[i].timer>=15);
+  if(res.fast.length<2) return res;
+  // strides and the like: fast, but far shorter than the real intervals
+  const dur=res.fast.map(i=>G[i].timer).sort((a,b)=>a-b), med=dur[dur.length>>1];
+  const work=res.fast.filter(i=>G[i].timer>=med*0.65&&G[i].timer<=med*1.35);
+  if(work.length<2) return res;
+  work.forEach(i=>kinds[i]="work");
+  for(let i=work[0]+1;i<work[work.length-1];i++) if(kinds[i]==="other") kinds[i]="rest";
+  return res;
+}
+
 /* ================= Heart rate from another recording ================= */
 async function readHrSource(file){
   let bytes=new Uint8Array(await file.arrayBuffer()), name=file.name;

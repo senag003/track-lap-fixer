@@ -234,6 +234,42 @@ input[type=datetime-local]{font:500 1rem var(--f-body);padding:7px 9px;border:1p
 ol.up{margin:8px 0 0;padding-left:1.2em;display:grid;gap:6px}
 ol.up li{padding-left:4px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-weight:600;max-width:calc(100% - 32px);z-index:9}
+.plot{touch-action:pan-y}
+.kind{display:block;font:700 .68rem var(--f-body);letter-spacing:.05em;text-transform:uppercase;color:var(--accent)}
+.kind.rest{color:var(--blue)}
+.tpl input[type=text]{width:9em}
+.txt{width:100%;font:500 1rem var(--f-body);padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);resize:vertical}
+.chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--surface);overflow:hidden}
+.chip button{border:0;background:none;color:var(--ink);font:600 .85rem var(--f-body);padding:5px 10px;cursor:pointer}
+.chip button+button{color:var(--muted);padding-left:2px}
+#laps td.splitcell{background:var(--surface-2);white-space:normal;text-align:left;padding:12px}
+.mbar{display:none}
+@media (max-width:720px){
+  #lapsSheet{overflow:visible;border:0;border-radius:0}
+  #laps{min-width:0;display:block}
+  #laps thead{display:none}
+  #laps tbody,#laps tfoot{display:block}
+  #laps tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:var(--surface)}
+  #laps tr.ch{background:var(--accent-soft);border-color:var(--accent)}
+  #laps tr.ch td{background:none}
+  #laps td{display:block;border:0;padding:0;text-align:left;white-space:normal}
+  #laps td[data-l]::before{content:attr(data-l);display:block;font:700 .68rem var(--f-body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+  #laps td.lap,#laps td.ed,#laps td.act,#laps td.splitcell{grid-column:1/-1}
+  #laps td.lap{display:flex;align-items:baseline;gap:10px}
+  #laps td.act{display:flex;flex-wrap:wrap;gap:8px}
+  #laps td.act:empty{display:none}
+  #laps tfoot td:empty{display:none}
+  .edit{display:flex;width:100%;gap:8px}
+  .edit input{flex:1;min-width:0;width:auto;text-align:center;font-size:1.15rem}
+  .step{width:48px;height:44px;flex:none}
+  .icon-btn{border-color:var(--line);padding:9px 12px;font-size:.9rem}
+  .tool-head .row{width:100%}
+  .mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:8;gap:10px;align-items:center;background:var(--surface);border-top:1px solid var(--line);padding:8px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
+  .mbar .btn.primary{padding:10px 16px;font-size:1rem}
+  .mbar-txt{flex:1;min-width:0;text-align:center;font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums}
+  main .in{padding-bottom:96px}
+  .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+}
 @media (max-width:820px){.pv-grid{grid-template-columns:1fr}}
 @media (max-width:720px){.band .in{grid-template-columns:1fr}.oval{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
@@ -320,14 +356,22 @@ ol.up li{padding-left:4px}
   <div class="card main-tool">
     <div class="tool-head">
       <div><span class="badge" data-i18n="main_badge"></span><h3 data-i18n="lapt_h"></h3><p data-i18n="lapt_p"></p></div>
-      <button class="btn" id="resetAll" data-i18n="reset_all"></button>
+      <div class="row"><button class="btn" id="undo" data-i18n="undo" disabled></button><button class="btn" id="redo" data-i18n="redo" disabled></button><button class="btn" id="resetAll" data-i18n="reset_all"></button></div>
+    </div>
+    <div class="bulk tpl">
+      <div style="flex-basis:100%"><b data-i18n="tpl_h"></b><p class="hint" data-i18n="tpl_p"></p></div>
+      <div class="row"><label class="l" for="tplDist" data-i18n="tpl_work"></label><input type="text" id="tplDist" inputmode="numeric" placeholder="1200" autocomplete="off"><span class="unit">m</span></div>
+      <div class="row"><label class="l" for="tplRest" data-i18n="tpl_rest"></label><input type="number" id="tplRest" min="0" step="1" data-i18n-ph="tpl_rest_ph"><span class="unit">m</span></div>
+      <div class="row"><button class="btn" id="tplApply" data-i18n="apply"></button><button class="btn" id="tplSave" data-i18n="tpl_save"></button></div>
+      <p class="hint" id="tplInfo" style="flex-basis:100%"></p>
+      <div class="row" id="tplChips" style="flex-basis:100%"></div>
     </div>
     <div class="bulk">
       <div class="row"><label class="l" for="trackLen" data-i18n="track_len"></label><input type="number" id="trackLen" min="1" step="1" value="200"><span class="unit">m</span></div>
       <div class="row"><label class="l" for="bulkDist" data-i18n="set_all"></label><input type="number" id="bulkDist" min="0" step="1" value="400"><span class="unit">m</span><button class="btn" id="bulkApply" data-i18n="apply"></button></div>
       <button class="btn" id="snap" data-i18n="snap" data-i18n-title="snap_title"></button>
     </div>
-    <div class="sheet"><table id="laps"></table></div>
+    <div class="sheet" id="lapsSheet"><table id="laps"></table></div>
   </div>
   <div class="more-head"><h3 data-i18n="more_tools"></h3><p data-i18n="more_tools_p"></p></div>
   <div class="tgroups">
@@ -453,6 +497,11 @@ ol.up li{padding-left:4px}
       </div>
     </div>
     <div class="pv-stats" id="pvStats"></div>
+    <div id="pvInt" hidden>
+      <h4 data-i18n="int_h"></h4>
+      <p id="pvIntSum" style="font-weight:600;margin-bottom:6px"></p>
+      <div class="sheet"><table class="mini" id="pvIntT"></table></div>
+    </div>
     <div>
       <h4 data-i18n="pv_charts"></h4>
       <p class="lbl" data-i18n="pv_pace" id="pvPaceLbl"></p><div class="plot" id="pvPace"></div>
@@ -486,6 +535,10 @@ ol.up li{padding-left:4px}
       <div id="stravaBox" hidden>
         <div id="stravaOn" hidden>
           <p><span data-i18n="sv_connected"></span> <b id="stravaWho"></b></p>
+          <div class="field" style="margin-top:10px"><label for="svName" data-i18n="sv_title"></label><input type="text" id="svName" maxlength="200" class="txt"></div>
+          <div class="field" style="margin-top:8px"><label for="svDesc" data-i18n="sv_desc"></label><textarea id="svDesc" rows="2" class="txt"></textarea></div>
+          <label class="row" style="margin-top:8px;gap:8px"><input type="checkbox" id="svHide"><span data-i18n="sv_hide"></span></label>
+          <p class="hint" data-i18n="sv_vis" style="margin-top:4px"></p>
           <div class="row" style="margin-top:10px"><button class="btn primary" id="stravaUpload" data-i18n="sv_upload"></button><button class="btn sm" id="stravaOff" data-i18n="sv_disconnect"></button></div>
           <p class="hint" id="stravaStatus" style="margin-top:8px"></p>
         </div>
@@ -516,6 +569,11 @@ ol.up li{padding-left:4px}
 
 </div></main>
 <div class="toast" id="toast" hidden></div>
+<div class="mbar" id="mbar">
+  <button class="btn" id="mbarUndo" data-i18n="undo" disabled></button>
+  <div class="mbar-txt" id="mbarTxt"></div>
+  <button class="btn primary" id="mbarSave" data-i18n="save_short" disabled></button>
+</div>
 
 <script>
 "use strict";

@@ -119,7 +119,7 @@ function load(bytes,name,sample,keepCombined){
   S.repairNotes=[];
   if(needsRepair(bytes)){ const r=repairFit(bytes); bytes=r.bytes; S.repairNotes=r.notes; }
   const fit=parseFit(bytes), model=buildModel(fit);
-  S.model=model; S.name=name; S.sample=sample; S.bytes=bytes; if(!keepCombined) S.combinedWith=null;
+  S.model=model; S.name=name; S.sample=sample; S.bytes=bytes; S.base=bytes; S.splits=0; S.cutKey=null; S.cutTs=null; S.svTouched=false; S.hist={cur:null,undo:[],redo:[]}; if(!keepCombined) S.combinedWith=null;
   showRepair();
   S.E=freshEdits(model,document.querySelector("input[name=mode]:checked")?.value);
   // a repaired file whose laps reach past the last readable data point is cut there
@@ -143,8 +143,38 @@ function resetToolInputs(){
   document.querySelector("input[name=spikeMode][value=off]").checked=true; readSpike();
 }
 
+function applyBytes(bytes){
+  const fit=parseFit(bytes); S.model=buildModel(fit); S.bytes=bytes; S.prev=null;
+  const span=Math.max(1,S.model.t1-S.model.t0); for(const id of ["cropStart","trim"]) $(id).max=span;
+}
+/* ---- undo / redo ---- */
+const cloneE=E=>({...E,groups:E.groups.map(g=>[...g]),dist:{...E.dist},remove:{...E.remove},spike:E.spike?{...E.spike}:null,hrImport:E.hrImport?{...E.hrImport}:null});
+const sigOf=()=>JSON.stringify({...S.E,hrImport:S.E.hrImport?[S.E.hrImport.name,S.E.hrImport.offset]:null})+"|"+S.splits;
+const snap=()=>({E:cloneE(S.E),bytes:S.bytes,splits:S.splits,sig:sigOf()});
+function recordHist(){
+  const h=S.hist, cur=snap();
+  if(!h.cur) h.cur=cur; else if(h.cur.sig!==cur.sig){ h.undo.push(h.cur); if(h.undo.length>60) h.undo.shift(); h.redo=[]; h.cur=cur; }
+  updateUndoBtns();
+}
+function updateUndoBtns(){ const h=S.hist; $("undo").disabled=!h.undo.length; $("mbarUndo").disabled=!h.undo.length; $("redo").disabled=!h.redo.length; }
+function syncUi(){
+  const m=S.model, E=S.E, span=Math.max(1,m.t1-m.t0);
+  document.querySelector(`input[name=mode][value=${E.mode}]`).checked=true;
+  $("cropStart").value=E.cropStart!=null?E.cropStart-m.t0:0; $("trim").value=E.trim!=null?E.trim-m.t0:span;
+  document.querySelector(`input[name=spikeMode][value=${E.spike?E.spike.mode:"off"}]`).checked=true;
+  $("hrJump").value=E.spike&&E.spike.jump?E.spike.jump:30; $("hrMax").value=E.spike&&E.spike.limit?E.spike.limit:""; $("pwrMax").value=E.pwrMax||"";
+  $("importOff").value=E.hrImport?E.hrImport.offset:0; readSpike();
+  fillSport(); fillRemove(); fillDevice(); updateCropLabels(); updateShiftUi(); updateSpikeInfo(); updateImportInfo();
+}
+function restore(sn){
+  if(sn.bytes!==S.bytes) applyBytes(sn.bytes);
+  S.E=cloneE(sn.E); S.splits=sn.splits; S.cutKey=null; S.cutTs=null; S.hist.cur=sn; syncUi(); renderAll(); updateUndoBtns();
+}
+function undo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.undo.length) return; h.redo.push(h.cur); restore(h.undo.pop()); toast(t("undone")); }
+function redo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.redo.length) return; h.undo.push(h.cur); restore(h.redo.pop()); }
 function renderAll(){ renderTable(); renderLive(); }
-function renderLive(){ renderStats(); renderCharts(); updateToolChips(); updateSplitLabel(); scheduleCheck(); }
+function updateMbar(){ const G=derive(S.model,S.E); $("mbarTxt").textContent=fmtKm(G.reduce((a,g)=>a+g.dist,0))+" km · "+G.length+" "+t("stat_laps").toLowerCase(); }
+function renderLive(){ renderStats(); renderCharts(); updateToolChips(); updateSplitLabel(); updateMbar(); scheduleCheck(); }
 
 function renderStats(){
   const m=S.model, G=derive(m,S.E), timer=G.reduce((a,g)=>a+g.timer,0), watch=m.laps.reduce((a,L)=>a+L.dist,0), n=G.reduce((a,g)=>a+g.dist,0);
@@ -161,24 +191,38 @@ function renderStats(){
 }
 
 function renderTable(){
-  const m=S.model, E=S.E, G=derive(m,E);
-  const visible=new Set(G.map(g=>g.key));
+  const m=S.model, E=S.E, G=derive(m,E), kinds=classifyLaps(G).kinds, visible=new Set(G.map(g=>g.key));
   const rows=E.groups.map((g,gi)=>{
     const key=gkey(g), d=G.find(x=>x.key===key);
     if(!d) return `<tr class="cut"><td class="lap">–<small>${esc(t("cut_row"))}</small></td><td colspan="6" style="text-align:left">${esc(t("cut_row_long"))}</td></tr>`;
     const canMerge=gi<E.groups.length-1&&visible.has(gkey(E.groups[gi+1]))&&!m.fit.hasCompressed;
-    const n=G.indexOf(d)+1;
-    return `<tr data-k="${key}">
-      <td class="lap">${n}${g.length>1?`<small>${esc(t("merged_n",{n:g.length}))}</small>`:(d.clipped||d.clipStart)?`<small>${esc(t("clipped"))}</small>`:""}</td>
-      <td>${fmtTime(d.timer)}</td>
-      <td class="dim">${fmtM(d.watch)} m</td>
-      <td><span class="edit"><button class="step" data-d="-1" aria-label="${esc(t("step_less",{n}))}">−</button><input type="number" id="d_${key}" min="0" step="1" value="${fmtM(d.dist)}" aria-label="${esc(t("real_aria",{n}))}"><button class="step" data-d="1" aria-label="${esc(t("step_more",{n}))}">+</button></span></td>
-      <td class="tl"></td><td class="pace"></td>
-      <td>${g.length>1?`<button class="icon-btn" data-split="${gi}" title="${esc(t("split_title"))}">${esc(t("split"))}</button>`:""}${canMerge?`<button class="icon-btn" data-merge="${gi}" title="${esc(t("merge_title"))}">${esc(t("merge"))}</button>`:""}</td></tr>`;
+    const i=G.indexOf(d), n=i+1, k=kinds[i], canSplit=g.length===1&&!d.clipped&&!d.clipStart&&d.elapsed>=30&&!m.fit.hasCompressed;
+    const tag=k==="work"?`<span class="kind">${esc(t("kind_work"))}</span>`:k==="rest"?`<span class="kind rest">${esc(t("kind_rest"))}</span>`:"";
+    let row=`<tr data-k="${key}">
+      <td class="lap"><span>${n}</span>${tag}${g.length>1?`<small>${esc(t("merged_n",{n:g.length}))}</small>`:(d.clipped||d.clipStart)?`<small>${esc(t("clipped"))}</small>`:""}</td>
+      <td data-l="${esc(t("th_time"))}">${fmtTime(d.timer)}</td>
+      <td class="dim" data-l="${esc(t("th_watch"))}">${fmtM(d.watch)} m</td>
+      <td class="ed" data-l="${esc(t("th_real"))}"><span class="edit"><button class="step" data-d="-1" aria-label="${esc(t("step_less",{n}))}">−</button><input type="number" id="d_${key}" inputmode="decimal" min="0" step="1" value="${fmtM(d.dist)}" aria-label="${esc(t("real_aria",{n}))}"><button class="step" data-d="1" aria-label="${esc(t("step_more",{n}))}">+</button></span></td>
+      <td class="tl" data-l="${esc(t("th_track"))}"></td><td class="pace" data-l="${esc(t("th_pace"))}"></td>
+      <td class="act">${canSplit?`<button class="icon-btn" data-cut="${key}">${esc(t("lap_split_btn"))}</button>`:""}${g.length>1?`<button class="icon-btn" data-split="${gi}" title="${esc(t("split_title"))}">${esc(t("split"))}</button>`:""}${canMerge?`<button class="icon-btn" data-merge="${gi}" title="${esc(t("merge_title"))}">${esc(t("merge"))}</button>`:""}</td></tr>`;
+    if(S.cutKey===key){
+      const L=m.laps[g[0]], lo=5, hi=Math.max(lo+1,Math.round(L.elapsed)-5);
+      row+=`<tr class="splitrow"><td colspan="7" class="splitcell"><div class="field"><label for="lapCut"><span>${esc(t("cut_at"))}</span> <b id="lapCutL"></b></label><input type="range" id="lapCut" min="${lo}" max="${hi}" value="${S.cutTs-L.start}"><span class="hint" id="lapCutI"></span></div><div class="row" style="margin-top:8px"><button class="btn sm" id="lapCutOk">${esc(t("cut_do"))}</button><button class="btn sm" id="lapCutNo">${esc(t("cut_cancel"))}</button></div></td></tr>`;
+    }
+    return row;
   }).join("");
   $("laps").innerHTML=`<thead><tr><th>${t("th_lap")}</th><th>${t("th_time")}</th><th>${t("th_watch")}</th><th>${t("th_real")}</th><th>${t("th_track")}</th><th>${t("th_pace")}</th><th></th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>${t("total")}</td><td id="ft"></td><td class="dim" id="fo"></td><td id="fn"></td><td></td><td id="fp"></td><td></td></tr></tfoot>`;
-  G.forEach(updateRow); updateFoot();
+    <tfoot><tr><td class="lap">${t("total")}</td><td id="ft" data-l="${esc(t("th_time"))}"></td><td class="dim" id="fo" data-l="${esc(t("th_watch"))}"></td><td id="fn" data-l="${esc(t("th_real"))}"></td><td></td><td id="fp" data-l="${esc(t("th_pace"))}"></td><td></td></tr></tfoot>`;
+  G.forEach(updateRow); updateFoot(); updateCutInfo();
+  const w=kinds.filter(k=>k==="work").length, r=kinds.filter(k=>k==="rest").length;
+  $("tplInfo").textContent=w?t("tpl_found",{a:w,b:r}):t("tpl_none");
+}
+function updateCutInfo(){
+  const el=$("lapCut"); if(!el||!S.cutKey) return;
+  const L=S.model.laps[+S.cutKey.split("-")[0]], at=+el.value, rs=L.records.filter(r=>r.ts<L.start+at&&r.dist!=null);
+  const d1=rs.length?Math.max(0,rs[rs.length-1].dist-L.origStart):0;
+  S.cutTs=L.start+at; $("lapCutL").textContent=fmtTime(at);
+  $("lapCutI").textContent=t("cut_parts",{a:fmtTime(at)+" · "+fmtM(d1)+" m",b:fmtTime(L.elapsed-at)+" · "+fmtM(Math.max(0,L.dist-d1))+" m"});
 }
 function updateRow(g){
   const tr=$("laps").querySelector(`tr[data-k="${g.key}"]`); if(!tr) return; const tl=trackLen();
@@ -196,9 +240,10 @@ function setDist(key,v,sync){
 }
 
 /* ---- overview charts (time axis) ---- */
+const chartW=()=>Math.min(1000,Math.max(300,Math.round($("plotTop").clientWidth||1000)));
 function niceStep(range,target){const raw=range/target, p=Math.pow(10,Math.floor(Math.log10(raw))), n=raw/p; return (n<1.5?1:n<3?2:n<7?5:10)*p;}
 function renderCharts(){
-  const m=S.model, E=S.E, G=derive(m,E), W=1000, H=190, L=40, R=8, TP=18, B=24, t0=m.t0, span=Math.max(1,m.t1-t0);
+  const m=S.model, E=S.E, G=derive(m,E), W=chartW(), H=190, L=40, R=8, TP=18, B=24, t0=m.t0, span=Math.max(1,m.t1-t0);
   const X=v=>L+(v-t0)/span*(W-L-R);
   const key=S.metric, mul=key==="cad"?cadMul():1;
   const pts=m.records.filter(r=>r.ts!=null&&r[key]!=null&&(key!=="cad"||r.cad>0));
@@ -216,9 +261,10 @@ function renderCharts(){
     svg+=`<path class="series" d="${d}" style="stroke:${col}"/>`;
     const lim=E.spike&&E.spike.mode==="limit"?E.spike.limit:0;
     if(key==="hr"&&lim>0&&lim<hi) svg+=`<line x1="${L}" x2="${W-R}" y1="${Y(lim)}" y2="${Y(lim)}" stroke="var(--warn)" stroke-dasharray="6 4" stroke-width="1.5"/>`;
-    const step=niceStep(span/60,6)*60; for(let s=0;s<=span;s+=step) svg+=`<text x="${X(t0+s)}" y="${H-6}" text-anchor="middle">${Math.round(s/60)} min</text>`;
+    const step=niceStep(span/60,W<600?4:6)*60; for(let s=0;s<=span;s+=step) svg+=`<text x="${X(t0+s)}" y="${H-6}" text-anchor="middle">${Math.round(s/60)} min</text>`;
     if(E.trim!=null&&E.trim<m.t1) svg+=`<rect class="cut" x="${X(E.trim)}" y="${TP}" width="${W-R-X(E.trim)}" height="${H-TP-B}"/><line class="cutline" x1="${X(E.trim)}" x2="${X(E.trim)}" y1="${TP-4}" y2="${H-B}"/>`;
     if(E.cropStart!=null&&E.cropStart>m.t0) svg+=`<rect class="cut" x="${L}" y="${TP}" width="${X(E.cropStart)-L}" height="${H-TP-B}"/><line class="cutline" x1="${X(E.cropStart)}" x2="${X(E.cropStart)}" y1="${TP-4}" y2="${H-B}"/>`;
+    if(S.cutKey&&S.cutTs) svg+=`<line class="cutline" x1="${X(S.cutTs)}" x2="${X(S.cutTs)}" y1="${TP-4}" y2="${H-B}"/>`;
     svg+=`<line class="xh" id="xh" x1="0" x2="0" y1="${TP}" y2="${H-B}" visibility="hidden"/><circle id="xd" r="4" fill="${col}" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>`;
     svg+=`<rect x="${L}" y="0" width="${W-L-R}" height="${H}" fill="transparent"/>`;
     S.chart={X,Y,pts,key,mul,W,L,R,t0,span,H};
@@ -241,7 +287,7 @@ function svgPoint(svg,evt,W=1000){const r=svg.getBoundingClientRect();return {x:
 function nearest(arr,val,get){let lo=0,hi=arr.length-1; if(hi<0) return -1; while(hi-lo>1){const mid=(lo+hi)>>1; if(get(arr[mid])<val) lo=mid; else hi=mid;} return Math.abs(get(arr[lo])-val)<=Math.abs(get(arr[hi])-val)?lo:hi;}
 $("plotTop").addEventListener("pointermove",e=>{
   const c=S.chart, svg=$("plotTop").querySelector("svg"); if(!c||!svg) return;
-  const p=svgPoint(svg,e); if(p.x<c.L||p.x>c.W-c.R){hideTop();return;}
+  const p=svgPoint(svg,e,c.W); if(p.x<c.L||p.x>c.W-c.R){hideTop();return;}
   const tv=c.t0+(p.x-c.L)/(c.W-c.L-c.R)*c.span, r=c.pts[nearest(c.pts,tv,q=>q.ts)];
   const x=c.X(r.ts), y=c.Y(r[c.key]*c.mul), xh=$("xh"), xd=$("xd");
   xh.setAttribute("x1",x);xh.setAttribute("x2",x);xh.setAttribute("visibility","visible");xd.setAttribute("cx",x);xd.setAttribute("cy",y);xd.setAttribute("visibility","visible");
@@ -297,7 +343,7 @@ function renderPreview(){
   } else $("pvMap").innerHTML=`<div class="nomap">${esc(t("pv_nomap"))}</div>`;
 }
 function drawDist(id,ser,get,o){
-  const W=1000,H=150,L=48,R=8,TP=8,B=20, el=$(id);
+  const W=chartW(),H=150,L=48,R=8,TP=8,B=20, el=$(id);
   const pts=ser.map((r,i)=>({i,d:r.d,y:get(r)}));
   let vals=pts.map(p=>p.y).filter(v=>v!=null).sort((a,b)=>a-b);
   if(!vals.length||!(o.maxD>0)){el.innerHTML=`<svg viewBox="0 0 ${W} 40"><text x="${W/2}" y="24" text-anchor="middle">–</text></svg>`;return null;}
@@ -307,7 +353,7 @@ function drawDist(id,ser,get,o){
   const X=d=>L+d/o.maxD*(W-L-R), Y=v=>{const f=(Math.min(hi,Math.max(lo,v))-lo)/(hi-lo); return TP+(o.invert?f:1-f)*(H-TP-B);};
   let s=`<svg viewBox="0 0 ${W} ${H}">`;
   [lo+(hi-lo)*0.15,(lo+hi)/2,hi-(hi-lo)*0.15].forEach(v=>{s+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L-6}" y="${Y(v)+4}" text-anchor="end">${o.fmt(v)}</text>`;});
-  const km=o.maxD/1000, st=Math.max(1,niceStep(km,8)); for(let k=0;k<=km+1e-9;k+=st) s+=`<text x="${X(k*1000)}" y="${H-5}" text-anchor="middle">${fmtDec(k,st<1?1:0)} km</text>`;
+  const km=o.maxD/1000, st=Math.max(1,niceStep(km,W<600?4:8)); for(let k=0;k<=km+1e-9;k+=st) s+=`<text x="${X(k*1000)}" y="${H-5}" text-anchor="middle">${fmtDec(k,st<1?1:0)} km</text>`;
   let d="", open=false; for(const p of pts){ if(p.y==null){open=false;continue;} d+=(open?"L":"M")+X(p.d).toFixed(1)+" "+Y(p.y).toFixed(1); open=true; }
   s+=`<path class="series" d="${d}" style="stroke:${o.color}"/><line class="xh" x1="0" x2="0" y1="${TP}" y2="${H-B}" visibility="hidden"/><circle r="4" fill="${o.color}" stroke="var(--surface)" stroke-width="2" visibility="hidden"/><rect x="${L}" y="0" width="${W-L-R}" height="${H}" fill="transparent"/></svg><div class="tip" hidden></div>`;
   el.innerHTML=s;
@@ -316,7 +362,7 @@ function drawDist(id,ser,get,o){
 function pvMove(e){
   const charts=(S.pvCharts||[]).filter(Boolean); if(!charts.length) return;
   const host=e.currentTarget, c0=charts.find(c=>c.el===host); if(!c0) return;
-  const svg=host.querySelector("svg"), p=svgPoint(svg,e);
+  const svg=host.querySelector("svg"), p=svgPoint(svg,e,c0.W);
   if(p.x<c0.L||p.x>c0.W-c0.R){pvHide();return;}
   const dval=(p.x-c0.L)/(c0.W-c0.L-c0.R)*c0.maxD, ser=S.pvSeries, i=nearest(ser,dval,r=>r.d); if(i<0) return; const r=ser[i];
   for(const c of charts){
@@ -339,9 +385,10 @@ function scheduleCheck(){clearTimeout(scheduleCheck.h);scheduleCheck.h=setTimeou
 function runCheck(){
   const m=S.model, E=S.E; let res, v;
   try{res=build(m,E);v=verify(m,E,res.file,res.G);}catch(err){$("verify").innerHTML=`<li class="bad"><span class="ic">!</span><span>${esc(t("build_err",{x:err.message}))}</span></li>`;$("save").disabled=true;return;}
-  S.last=res; S.prev=v.model||null;
+  S.last=res; S.prev=v.model||null; recordHist();
   const G=res.G, F=res.F, ch=[], nd=G.filter(isChanged).length;
   if(nd){const a=m.laps.reduce((s,L)=>s+L.dist,0), b=G.reduce((s,g)=>s+g.dist,0); ch.push(t("chg_dist",{n:nd,a:fmtKm(a),b:fmtKm(b)})); ch.push(t(E.mode==="even"?"chg_even":"chg_shape"));}
+  if(S.splits) ch.push(t("chg_lapsplit",{n:S.splits}));
   if(res.merged) ch.push(t("chg_merge",{n:E.groups.filter(g=>g.length>1).length}));
   if(F.cropS) ch.push(t("chg_crop_start",{a:fmtTime(E.cropStart-m.t0),b:fmtTime(E.cropStart-m.t0)}));
   if(F.cropE) ch.push(t("chg_trim",{a:fmtTime(E.trim-m.t0),b:fmtTime(m.t1-E.trim)}));
@@ -356,9 +403,33 @@ function runCheck(){
   $("changes").innerHTML=ch.length?ch.map(x=>`<li class="chg"><span class="ic">✎</span><span>${esc(x)}</span></li>`).join(""):`<li class="ok"><span class="ic">–</span><span>${esc(t("nothing"))}</span></li>`;
   $("verify").innerHTML=v.error?`<li class="bad"><span class="ic">!</span><span>${esc(v.error)}</span></li>`:v.items.map(i=>`<li class="${i.ok?"ok":"bad"}"><span class="ic">${i.ok?"✓":"!"}</span><span>${esc(i.t)}</span></li>`).join("");
   const any=ch.length>0;
-  $("save").disabled=!any||!v.ok;
+  $("save").disabled=!any||!v.ok; $("mbarSave").disabled=$("save").disabled;
   $("saveNote").textContent=t(!any?"save_first":v.ok?"save_ready":"save_bad");
-  renderPreview();
+  renderPreview(); renderIntervals();
+}
+/* ---- interval summary and suggested Strava title ---- */
+const medianOf=a=>{const b=[...a].sort((x,y)=>x-y); return b.length?b[b.length>>1]:0;};
+function renderIntervals(){
+  const m=S.model, E=S.E, G=derive(m,E), kinds=classifyLaps(G).kinds, work=G.filter((g,i)=>kinds[i]==="work"), rest=G.filter((g,i)=>kinds[i]==="rest");
+  const pace=isPace(), T0=E.cropStart??-Infinity, T=E.trim??Infinity, kept=m.records.filter(r=>r.ts!=null&&r.ts>=T0&&r.ts<=T), ov={hr:hrOverrides(m,E,kept)};
+  $("pvInt").hidden=work.length<2;
+  if(work.length>=2){
+    const rows=work.map(g=>({g,s:statsOf(g.recs,ov)}));
+    $("pvIntT").innerHTML=`<thead><tr><th>#</th><th>${t("stat_dist")}</th><th>${t("th_time")}</th><th>${pace?t("th_pace"):t("stat_speed")}</th><th>${t("th_hr")}</th><th>${t("pv_maxhr")}</th></tr></thead><tbody>`+
+      rows.map(({g,s},i)=>`<tr><td>${i+1}</td><td>${fmtM(g.dist)} m</td><td>${fmtTime(g.timer)}</td><td>${fmtSpeed(g.timer,g.dist)}</td><td>${s.avgHr!=null?fmtInt(s.avgHr):"–"}</td><td>${s.maxHr??"–"}</td></tr>`).join("")+"</tbody>";
+    const tt=work.reduce((a,g)=>a+g.timer,0), dd=work.reduce((a,g)=>a+g.dist,0), hrs=rows.map(r=>r.s.avgHr).filter(v=>v!=null);
+    const parts=[fmtSpeed(tt,dd)+" "+speedUnit()];
+    if(hrs.length) parts.push(t("th_hr")+" "+fmtInt(hrs.reduce((a,b)=>a+b,0)/hrs.length));
+    if(rest.length) parts.push(t("kind_rest")+" "+fmtTime(medianOf(rest.map(g=>g.elapsed))));
+    const A=work[0], B=work[work.length-1];
+    if(pace&&A.dist>0&&B.dist>0){ const df=B.timer/(B.dist/1000)-A.timer/(A.dist/1000); parts.push(t("int_fade",{x:(df>0?"+":df<0?"−":"")+fmtTime(Math.abs(df))})); }
+    $("pvIntSum").textContent=parts.join(" · ");
+  }
+  if(!S.svTouched&&$("svName")){
+    const ds=[...new Set(work.map(g=>Math.round(g.dist)))];
+    $("svName").value=work.length>=2?(ds.length===1?`${work.length} × ${ds[0]} m`:work.map(g=>Math.round(g.dist)).join("/")+" m"):"";
+    $("svDesc").value=rest.length?t("sv_desc_rest",{x:fmtTime(medianOf(rest.map(g=>g.elapsed)))}):"";
+  }
 }
 
 /* ---- events: lap table ---- */
@@ -372,14 +443,58 @@ $("laps").addEventListener("click",e=>{
     const edited=E.dist[a.key]!=null||E.dist[b.key]!=null, merged=E.groups[i].concat(E.groups[i+1]);
     delete E.dist[a.key]; delete E.dist[b.key]; E.groups.splice(i,2,merged); if(edited) E.dist[gkey(merged)]=a.dist+b.dist;
     renderAll(); toast(t("toast_merged",{a:G.indexOf(a)+1,b:G.indexOf(b)+1})); return;}
+  const cu=e.target.closest("[data-cut]");
+  if(cu){const key=cu.dataset.cut; if(S.cutKey===key){S.cutKey=null;S.cutTs=null;} else {S.cutKey=key; const L=S.model.laps[+key.split("-")[0]], tt=suggestCut(L); S.cutTs=Math.min(L.end-5,Math.max(L.start+5,tt));} renderTable(); renderCharts(); return;}
+  if(e.target.id==="lapCutNo"){S.cutKey=null;S.cutTs=null;renderTable();renderCharts();return;}
+  if(e.target.id==="lapCutOk"){doLapSplit();return;}
   const sp=e.target.closest("[data-split]");
   if(sp){const i=+sp.dataset.split, E=S.E, g=E.groups[i]; delete E.dist[gkey(g)]; E.groups.splice(i,1,...g.map(x=>[x])); renderAll(); toast(t("toast_split")); }
 });
+$("laps").addEventListener("input",e=>{ if(e.target.id==="lapCut"){ updateCutInfo(); renderCharts(); } });
+function doLapSplit(){
+  const key=S.cutKey, i=+key.split("-")[0];
+  try{
+    const bytes=splitLapFit(S.model,i,S.cutTs), E=S.E, mp=x=>x>i?x+1:x, dist={};
+    for(const [k,v] of Object.entries(E.dist)) if(k!==key) dist[gkey(k.split("-").map(x=>mp(+x)))]=v;
+    const groups=[]; for(const g of E.groups){ if(g.length===1&&g[0]===i){groups.push([i],[i+1]);} else groups.push(g.map(mp)); }
+    applyBytes(bytes); S.E={...E,groups,dist}; S.splits=(S.splits||0)+1; S.cutKey=null; S.cutTs=null; renderAll(); toast(t("toast_lapsplit"));
+  }catch(err){toast(err.message);}
+}
+/* templates: fast laps -> given distance(s), rest laps -> optional distance */
+const TPL_KEY="tlf-templates";
+const tplAll=()=>{try{return JSON.parse(localStorage.getItem(TPL_KEY)||"[]");}catch(e){return [];}};
+const tplPut=a=>{try{localStorage.setItem(TPL_KEY,JSON.stringify(a));}catch(e){}};
+function parseWork(x){ const s=String(x).trim(), mm=s.match(/^\d+\s*[x×*]\s*(\d+)$/i); if(mm) return [+mm[1]]; return s.split(/[\s,;\/]+/).map(Number).filter(v=>v>0); }
+function applyTpl(work,rest){
+  const G=derive(S.model,S.E), c=classifyLaps(G); let n=0;
+  if(work.length>1){ c.fast.forEach((i,k)=>{ S.E.dist[G[i].key]=work[k%work.length]; n++; }); }
+  else c.kinds.forEach((k,i)=>{ if(k==="work"){ S.E.dist[G[i].key]=work[0]; n++; } });
+  if(rest!=null) c.kinds.forEach((k,i)=>{ if(k==="rest"){ S.E.dist[G[i].key]=rest; n++; } });
+  if(!n){toast(t("tpl_none"));return;}
+  renderAll(); toast(t("tpl_done",{n}));
+}
+function renderTpls(){
+  $("tplChips").innerHTML=tplAll().map((x,i)=>`<span class="chip"><button data-tpl="${i}">${esc(x.name)}</button><button data-tpldel="${i}" aria-label="${esc(t("orig_del"))}">×</button></span>`).join("");
+}
+const tplRead=()=>({work:parseWork($("tplDist").value),rest:$("tplRest").value===""?null:Math.max(0,+$("tplRest").value)});
+$("tplApply").addEventListener("click",()=>{const x=tplRead(); if(!x.work.length){toast(t("tpl_need"));return;} applyTpl(x.work,x.rest);});
+$("tplSave").addEventListener("click",()=>{const x=tplRead(); if(!x.work.length){toast(t("tpl_need"));return;}
+  const name=x.work.join("/")+" m"+(x.rest!=null?" + "+x.rest+" m":""), all=tplAll().filter(y=>y.name!==name); all.unshift({name,work:x.work,rest:x.rest}); tplPut(all.slice(0,12)); renderTpls(); toast(t("tpl_saved"));});
+$("tplChips").addEventListener("click",e=>{
+  const d=e.target.closest("[data-tpldel]"), u=e.target.closest("[data-tpl]"), all=tplAll();
+  if(d){all.splice(+d.dataset.tpldel,1);tplPut(all);renderTpls();}
+  else if(u){const x=all[+u.dataset.tpl]; $("tplDist").value=x.work.join(", "); $("tplRest").value=x.rest??""; applyTpl(x.work,x.rest);}
+});
+$("undo").addEventListener("click",undo); $("mbarUndo").addEventListener("click",undo); $("redo").addEventListener("click",redo);
+$("mbarSave").addEventListener("click",()=>$("save").click());
+["svName","svDesc"].forEach(id=>$(id).addEventListener("input",()=>{S.svTouched=true;}));
+let resizeT; addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{ if(S.model){renderCharts();renderPreview();} },200);});
 $("trackLen").addEventListener("input",()=>{ if(S.model) derive(S.model,S.E).forEach(updateRow); });
 $("bulkApply").addEventListener("click",()=>{const v=Math.max(0,parseFloat($("bulkDist").value)||0); derive(S.model,S.E).forEach(g=>S.E.dist[g.key]=v); renderAll(); toast(t("toast_all",{x:fmtM(v)}));});
 $("snap").addEventListener("click",()=>{const tl=trackLen(); derive(S.model,S.E).forEach(g=>S.E.dist[g.key]=Math.round(g.watch/tl)*tl); renderAll(); toast(t("toast_snap",{x:tl}));});
 $("resetAll").addEventListener("click",()=>{
-  S.E=freshEdits(S.model,"even"); document.querySelector('input[name=mode][value=even]').checked=true;
+  if(S.bytes!==S.base) applyBytes(S.base);
+  S.splits=0; S.cutKey=null; S.cutTs=null; S.svTouched=false; S.E=freshEdits(S.model,"even"); document.querySelector('input[name=mode][value=even]').checked=true;
   $("cropStart").value=0; $("trim").value=$("trim").max; fillSport(); fillRemove(); fillDevice(); $("totalKm").value=""; resetToolInputs();
   updateCropLabels(); updateShiftUi(); updateSpikeInfo(); updateImportInfo(); renderAll(); toast(t("toast_reset"));
 });
@@ -560,18 +675,20 @@ $("stravaUpload").addEventListener("click",async()=>{
   try{
     const tok=await svToken(), fd=new FormData();
     fd.append("file",new Blob([res.file],{type:"application/octet-stream"}),baseName()+".fit"); fd.append("data_type","fit");
+    const nm=$("svName").value.trim(), ds=$("svDesc").value.trim(); if(nm) fd.append("name",nm); if(ds) fd.append("description",ds);
     let r=await fetch("https://www.strava.com/api/v3/uploads",{method:"POST",headers:{Authorization:"Bearer "+tok},body:fd}), j=await r.json();
     if(!r.ok) throw new Error(j.message||("Strava "+r.status));
     for(let i=0;i<30&&!j.activity_id&&!j.error;i++){ await new Promise(z=>setTimeout(z,2000)); r=await fetch("https://www.strava.com/api/v3/uploads/"+j.id,{headers:{Authorization:"Bearer "+tok}}); j=await r.json(); }
     if(j.error) throw new Error(/duplicate/i.test(j.error)?t("sv_duplicate"):j.error);
     if(!j.activity_id) throw new Error(t("sv_slow"));
+    if($("svHide").checked){ try{ await fetch("https://www.strava.com/api/v3/activities/"+j.activity_id,{method:"PUT",headers:{Authorization:"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify({hide_from_home:true})}); }catch(_){} }
     st.innerHTML=esc(t("sv_done"))+` <a href="https://www.strava.com/activities/${encodeURIComponent(j.activity_id)}" target="_blank" rel="noopener">${esc(t("sv_open"))}</a>`;
   }catch(e){ st.textContent=t("sv_fail",{x:e.message}); }
   finally{ btn.disabled=false; }
 });
 if("serviceWorker" in navigator&&!IS_ARTIFACT&&location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 
-window.__lapFixer={parseFit,buildModel,build,verify,derive,summarize,fitFromZip,makeZip,csvLaps,csvPoints,tcxOf,gpxOf,repairFit,needsRepair,combineFits,readHrSource,hrOverrides,editFlags,S,load,freshEdits};
+window.__lapFixer={splitLapFit,suggestCut,classifyLaps,undo,redo,parseFit,buildModel,build,verify,derive,summarize,fitFromZip,makeZip,csvLaps,csvPoints,tcxOf,gpxOf,repairFit,needsRepair,combineFits,readHrSource,hrOverrides,editFlags,S,load,freshEdits};
 applyStatic();
 try{load(Uint8Array.from(atob(SAMPLE_B64),c=>c.charCodeAt(0)),"example.fit",true);}catch(err){showErr(err.message);}
-renderOriginals(); renderStrava(); svFinishLogin();
+renderOriginals(); renderStrava(); renderTpls(); svFinishLogin();
