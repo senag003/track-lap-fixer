@@ -2,7 +2,7 @@
 usage: build_serve.py <artifact.html> [--pwa <dir>] [--serve <port> <root>]
 The artifact build is one self-contained page. The PWA build writes index.html, manifest, service worker
 (icons are made separately) into <dir>, plus the sources in <dir>/src."""
-import sys, os, http.server, shutil
+import sys, os, http.server, shutil, datetime
 s = os.path.dirname(os.path.abspath(__file__))
 rd = lambda n: open(os.path.join(s, n), encoding='utf-8').read()
 args = sys.argv[1:]
@@ -11,6 +11,7 @@ def page(pwa):
     html = rd('template.html')
     html = html.replace('/*I18N*/', rd('i18n.js')).replace('/*ENGINE*/', rd('engine.js')).replace('/*APP*/', rd('app.js'))
     html = html.replace('__SAMPLE_B64__', open(os.path.join(s, 'sample.b64')).read().strip())
+    html = html.replace('__BUILD__', datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))
     head = ('<link rel="manifest" href="manifest.webmanifest">\n<meta name="theme-color" content="#0f1b36">\n'
             '<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="mobile-web-app-capable" content="yes">\n'
             '<meta name="apple-mobile-web-app-status-bar-style" content="black">\n<meta name="apple-mobile-web-app-title" content="Lap Fixer">\n'
