@@ -174,7 +174,7 @@ function restore(sn){
 function undo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.undo.length) return; h.redo.push(h.cur); restore(h.undo.pop()); toast(t("undone")); }
 function redo(){ clearTimeout(scheduleCheck.h); runCheck(); const h=S.hist; if(!h.redo.length) return; h.undo.push(h.cur); restore(h.redo.pop()); }
 function renderAll(){ renderTable(); renderLive(); }
-function updateMbar(){ const d=S.pv==="old"?S.model.laps.reduce((a,L)=>a+L.dist,0):derive(S.model,S.E).reduce((a,g)=>a+g.dist,0); $("mbarTxt").textContent=fmtKm(d)+" km"; }
+function updateMbar(){ const d=S.pv==="old"?S.model.laps.reduce((a,L)=>a+L.dist,0):derive(S.model,S.E).reduce((a,g)=>a+g.dist,0); document.querySelectorAll(".js-km").forEach(el=>el.textContent=fmtKm(d)+" km"); }
 function renderLive(){ renderStats(); renderCharts(); updateToolChips(); updateSplitLabel(); updateMbar(); scheduleCheck(); }
 
 function renderStats(){

@@ -249,7 +249,8 @@ ol.up li{padding-left:4px}
 .chips.mini{flex:none}
 .chips.mini button{padding:2px 8px;font-size:.76rem}
 .mbar-txt{font-size:.78rem;font-weight:600;font-variant-numeric:tabular-nums;padding:0 6px;white-space:nowrap}
-#mbarSave{display:none}
+#mbarSave,.mbar .mbar-txt{display:none}
+.pv-bar{position:sticky;top:calc(env(safe-area-inset-top,0px) + 6px);z-index:4;align-self:flex-end;display:flex;gap:4px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:0 4px 14px rgba(10,16,32,.18)}
 @media (max-width:720px){
   #lapsSheet{overflow:visible;border:0;border-radius:0}
   #laps{min-width:0;display:block}
@@ -273,7 +274,7 @@ ol.up li{padding-left:4px}
   .mbar{left:0;right:0;bottom:0;border-width:1px 0 0;border-radius:0;box-shadow:none;padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
   .ic-btn{width:38px;height:38px}
   #mbarSave{display:inline-flex;padding:7px 12px;font-size:.9rem}
-  .mbar-txt{flex:1;min-width:0;text-align:center;padding:0}
+  .mbar .mbar-txt{display:block;flex:1;min-width:0;text-align:center;padding:0}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 }
 @media (max-width:820px){.pv-grid{grid-template-columns:1fr}}
@@ -497,10 +498,13 @@ ol.up li{padding-left:4px}
   <div class="card pv">
     <div class="pv-head">
       <div class="pv-title"><b id="pvName"></b><span id="pvWhen"></span></div>
-      <div class="chips" role="group" data-i18n-aria="show_aria">
+    </div>
+    <div class="pv-bar">
+      <div class="chips mini" role="group" data-i18n-aria="show_aria">
         <button type="button" data-pv="new" aria-pressed="true" data-i18n="pv_new"></button>
         <button type="button" data-pv="old" aria-pressed="false" data-i18n="pv_old"></button>
       </div>
+      <div class="mbar-txt js-km"></div>
     </div>
     <div class="pv-stats" id="pvStats"></div>
     <div id="pvInt" hidden>
@@ -581,11 +585,7 @@ ol.up li{padding-left:4px}
 <div class="mbar" id="mbar">
   <button class="btn ic-btn" id="undo" data-i18n-aria="undo" data-i18n-title="undo" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/></svg></button>
   <button class="btn ic-btn" id="redo" data-i18n-aria="redo" data-i18n-title="redo" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7l5 5-5 5"/><path d="M20 12H10a6 6 0 0 0-6 6v1"/></svg></button>
-  <div class="chips mini" role="group" data-i18n-aria="show_aria">
-    <button type="button" data-pv="new" aria-pressed="true" data-i18n="pv_new"></button>
-    <button type="button" data-pv="old" aria-pressed="false" data-i18n="pv_old"></button>
-  </div>
-  <div class="mbar-txt" id="mbarTxt"></div>
+  <div class="mbar-txt js-km"></div>
   <button class="btn primary" id="mbarSave" data-i18n="save_short" disabled></button>
 </div>
 
